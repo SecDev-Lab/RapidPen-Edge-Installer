@@ -1,0 +1,27 @@
+[Unit]
+Description=RapidPen Supervisor Service
+Documentation=https://github.com/SecDev-Lab/RapidPen
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=10
+TimeoutStopSec=30
+
+# remove existing container
+ExecStartPre=-{{DOCKER_BIN}} rm -f rapidpen-supervisor
+
+# launch Supervisor container
+ExecStart={{DOCKER_BIN}} run \
+    --name rapidpen-supervisor \
+    --rm \
+    -v {{DOCKER_SOCK}}:{{DOCKER_SOCK}} \
+    -v /etc/rapidpen/supervisor:/etc/rapidpen/supervisor \
+    {{SUPERVISOR_IMAGE}}
+
+ExecStop={{DOCKER_BIN}} stop rapidpen-supervisor
+
+[Install]
+WantedBy=multi-user.target

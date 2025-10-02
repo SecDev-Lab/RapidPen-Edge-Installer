@@ -1,0 +1,5 @@
+{
+  "supervisor_id_candidate": "{{SUPERVISOR_ID_CANDIDATE}}",
+  "log_dir_supervisor": "{{LOG_DIR_SUPERVISOR}}",
+  "log_dir_operator_base": "{{LOG_DIR_OPERATOR_BASE}}"
+}

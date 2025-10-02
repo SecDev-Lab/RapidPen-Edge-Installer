@@ -1,0 +1,5 @@
+{
+  "image_tag": "{{IMAGE_TAG}}",
+  "rapidpen_cloud_baseurl": "{{RAPIDPEN_CLOUD_BASEURL}}",
+  "rapidpen_cloud_api_key": "{{RAPIDPEN_CLOUD_API_KEY}}"
+}
