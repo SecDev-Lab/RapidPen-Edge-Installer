@@ -20,9 +20,9 @@ log_warn() {
     printf "${YELLOW}[WARN]${NC} %s\n" "$1"
 }
 
-echo "==========================================="
-echo "  RapidPen Edge Installer (Test Version)  "
-echo "==========================================="
+echo "==========================="
+echo "  RapidPen Edge Installer  "
+echo "==========================="
 echo ""
 
 # 1. root権限チェック（POSIX準拠）
@@ -146,13 +146,13 @@ else
     echo "Please enter your RapidPen Cloud API Key:"
     echo "(You can obtain this from RapidPen Cloud Web UI)"
     printf "API Key: "
-    read -r RAPIDPEN_API_KEY
+    read -r RAPIDPEN_API_KEY < /dev/tty
 
     # 空チェック
     while [ -z "$RAPIDPEN_API_KEY" ]; do
         log_error "API Key cannot be empty"
         printf "API Key: "
-        read -r RAPIDPEN_API_KEY
+        read -r RAPIDPEN_API_KEY < /dev/tty
     done
 
     log_info "  API Key configured"
@@ -170,7 +170,7 @@ else
     echo "RapidPen Cloud Base URL (default: $DEFAULT_BASEURL)"
     echo "(Press Enter to use default, or enter custom URL)"
     printf "Base URL: "
-    read -r RAPIDPEN_BASEURL
+    read -r RAPIDPEN_BASEURL < /dev/tty
 
     # 空の場合はデフォルト値を使用
     if [ -z "$RAPIDPEN_BASEURL" ]; then
