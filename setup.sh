@@ -292,6 +292,10 @@ if [ -f "$SERVICE_TEMPLATE" ]; then
         # サービスを有効化（自動起動）
         systemctl enable rapidpen-supervisor
         log_info "  Enabled rapidpen-supervisor service (auto-start on boot)"
+
+        # サービスを起動
+        systemctl start rapidpen-supervisor
+        log_info "  Started rapidpen-supervisor service"
     fi
 else
     log_warn "Service template not found at $SERVICE_TEMPLATE"
@@ -321,16 +325,11 @@ echo "==========================================="
 log_info "Installation completed successfully!"
 echo "==========================================="
 echo ""
-echo "Next steps:"
-echo "  1. Start the service:"
-echo "     sudo systemctl start rapidpen-supervisor"
-echo "  2. Check service status:"
-echo "     sudo systemctl status rapidpen-supervisor"
-echo "  3. View logs:"
-echo "     sudo journalctl -u rapidpen-supervisor -f"
+echo "Service is now running!"
 echo ""
-echo "Service management:"
-echo "  Start:   sudo systemctl start rapidpen-supervisor"
-echo "  Stop:    sudo systemctl stop rapidpen-supervisor"
-echo "  Restart: sudo systemctl restart rapidpen-supervisor"
-echo "  Status:  sudo systemctl status rapidpen-supervisor"
+echo "Useful commands:"
+echo "  Check status: sudo systemctl status rapidpen-supervisor"
+echo "  View logs:    sudo journalctl -u rapidpen-supervisor -f"
+echo "  Stop:         sudo systemctl stop rapidpen-supervisor"
+echo "  Restart:      sudo systemctl restart rapidpen-supervisor"
+echo "  Uninstall:    sudo rapidpen-uninstall"
