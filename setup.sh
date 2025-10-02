@@ -270,37 +270,32 @@ log_info "Installing systemd service..."
 SCRIPT_DIR=$(dirname "$0")
 SERVICE_TEMPLATE="$SCRIPT_DIR/templates/rapidpen-supervisor.service.template"
 
-if [ -f "$SERVICE_TEMPLATE" ]; then
-    # テンプレートから生成
-    sed -e "s|{{DOCKER_BIN}}|$DOCKER_BIN|g" \
-        -e "s|{{DOCKER_SOCK}}|$DOCKER_SOCK|g" \
-        -e "s|{{SUPERVISOR_IMAGE}}|$SUPERVISOR_IMAGE|g" \
-        "$SERVICE_TEMPLATE" > /etc/systemd/system/rapidpen-supervisor.service
-    log_info "  Created service file at /etc/systemd/system/rapidpen-supervisor.service"
-    log_info "  Using Docker binary: $DOCKER_BIN"
-    log_info "  Using Docker socket: $DOCKER_SOCK"
-    log_info "  Using Supervisor image: $SUPERVISOR_IMAGE"
-
-    # systemctl操作（環境変数SKIP_SYSTEMCTL=1でスキップ可能）
-    if [ "$SKIP_SYSTEMCTL" = "1" ]; then
-        log_info "  Skipping systemctl operations (SKIP_SYSTEMCTL=1)"
-    else
-        # systemdをリロード
-        systemctl daemon-reload
-        log_info "  Reloaded systemd daemon"
-
-        # サービスを有効化（自動起動）
-        systemctl enable rapidpen-supervisor
-        log_info "  Enabled rapidpen-supervisor service (auto-start on boot)"
-
-        # サービスを起動
-        systemctl start rapidpen-supervisor
-        log_info "  Started rapidpen-supervisor service"
-    fi
-else
-    log_warn "Service template not found at $SERVICE_TEMPLATE"
-    log_warn "Skipping systemd service installation"
+if [ ! -f "$SERVICE_TEMPLATE" ]; then
+    log_error "Service template not found at $SERVICE_TEMPLATE"
+    exit 1
 fi
+
+# テンプレートから生成
+sed -e "s|{{DOCKER_BIN}}|$DOCKER_BIN|g" \
+    -e "s|{{DOCKER_SOCK}}|$DOCKER_SOCK|g" \
+    -e "s|{{SUPERVISOR_IMAGE}}|$SUPERVISOR_IMAGE|g" \
+    "$SERVICE_TEMPLATE" > /etc/systemd/system/rapidpen-supervisor.service
+log_info "  Created service file at /etc/systemd/system/rapidpen-supervisor.service"
+log_info "  Using Docker binary: $DOCKER_BIN"
+log_info "  Using Docker socket: $DOCKER_SOCK"
+log_info "  Using Supervisor image: $SUPERVISOR_IMAGE"
+
+# systemdをリロード
+systemctl daemon-reload
+log_info "  Reloaded systemd daemon"
+
+# サービスを有効化（自動起動）
+systemctl enable rapidpen-supervisor
+log_info "  Enabled rapidpen-supervisor service (auto-start on boot)"
+
+# サービスを起動
+systemctl start rapidpen-supervisor
+log_info "  Started rapidpen-supervisor service"
 
 # 8. アンインストーラーをシステムに配置
 log_info "Installing uninstall command..."
