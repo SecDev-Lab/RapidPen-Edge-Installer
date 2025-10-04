@@ -114,6 +114,14 @@ else
     log_warn "  /var/log/rapidpen/ not found"
 fi
 
+# Upgrade check script
+if [ -f "/usr/local/bin/rapidpen-supervisor-check-upgrade.sh" ]; then
+    rm -f /usr/local/bin/rapidpen-supervisor-check-upgrade.sh
+    log_info "  Removed /usr/local/bin/rapidpen-supervisor-check-upgrade.sh"
+else
+    log_warn "  /usr/local/bin/rapidpen-supervisor-check-upgrade.sh not found"
+fi
+
 # Uninstall command itself
 if [ -f "/usr/bin/rapidpen-uninstall" ]; then
     rm -f /usr/bin/rapidpen-uninstall

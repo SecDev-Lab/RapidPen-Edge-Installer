@@ -263,6 +263,23 @@ else
     exit 1
 fi
 
+# 7.5. アップグレードチェックスクリプトをインストール
+log_info "Installing upgrade check script..."
+
+UPGRADE_SCRIPT_TEMPLATE="$SCRIPT_DIR/templates/rapidpen-supervisor-check-upgrade.sh"
+UPGRADE_SCRIPT_TARGET="/usr/local/bin/rapidpen-supervisor-check-upgrade.sh"
+
+if [ -f "$UPGRADE_SCRIPT_TEMPLATE" ]; then
+    # スクリプトをコピー
+    cp "$UPGRADE_SCRIPT_TEMPLATE" "$UPGRADE_SCRIPT_TARGET"
+    # 実行権限を設定
+    chmod 755 "$UPGRADE_SCRIPT_TARGET"
+    log_info "  Installed upgrade check script: $UPGRADE_SCRIPT_TARGET"
+else
+    log_error "Upgrade check script template not found: $UPGRADE_SCRIPT_TEMPLATE"
+    exit 1
+fi
+
 # 8. systemdサービスファイルをインストール
 log_info "Installing systemd service..."
 
@@ -275,15 +292,22 @@ if [ ! -f "$SERVICE_TEMPLATE" ]; then
     exit 1
 fi
 
+# jq コマンドを決定
+if command -v jq > /dev/null 2>&1; then
+    JQ_COMMAND="jq"
+else
+    JQ_COMMAND="docker run --rm -i imega/jq"
+fi
+
 # テンプレートから生成
 sed -e "s|{{DOCKER_BIN}}|$DOCKER_BIN|g" \
     -e "s|{{DOCKER_SOCK}}|$DOCKER_SOCK|g" \
-    -e "s|{{SUPERVISOR_IMAGE}}|$SUPERVISOR_IMAGE|g" \
+    -e "s|{{JQ_COMMAND}}|$JQ_COMMAND|g" \
     "$SERVICE_TEMPLATE" > /etc/systemd/system/rapidpen-supervisor.service
 log_info "  Created service file at /etc/systemd/system/rapidpen-supervisor.service"
 log_info "  Using Docker binary: $DOCKER_BIN"
 log_info "  Using Docker socket: $DOCKER_SOCK"
-log_info "  Using Supervisor image: $SUPERVISOR_IMAGE"
+log_info "  Using jq command: $JQ_COMMAND"
 
 # systemdをリロード
 systemctl daemon-reload
