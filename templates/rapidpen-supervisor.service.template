@@ -22,6 +22,7 @@ ExecStart=/bin/sh -c '{{DOCKER_BIN}} run \
     --rm \
     -v {{DOCKER_SOCK}}:{{DOCKER_SOCK}} \
     -v /etc/rapidpen/supervisor:/etc/rapidpen/supervisor \
+    -v /var/log/rapidpen/supervisor:/var/log/rapidpen/supervisor \
     ghcr.io/secdev-lab/rapidpen-supervisor:$(cat /etc/rapidpen/supervisor/state.json | {{JQ_COMMAND}} -r .image_tag)'
 
 ExecStop={{DOCKER_BIN}} stop rapidpen-supervisor
