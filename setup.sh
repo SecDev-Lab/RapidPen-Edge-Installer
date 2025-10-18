@@ -222,20 +222,24 @@ if ! command -v curl > /dev/null 2>&1; then
     exit 1
 fi
 
-# Supervisorイメージ決定（GitHub Releaseから取得）
-RELEASE_URL="https://github.com/SecDev-Lab/RapidPen-Edge-Installer/releases/download/supervisor-latest/supervisor-latest-image.txt"
+# Supervisorバージョン決定（GitHub Releaseから取得）
+RELEASE_URL="https://github.com/SecDev-Lab/RapidPen-Edge-Installer/releases/download/supervisor-latest/supervisor-version.txt"
 
-log_info "Fetching latest supervisor image tag from GitHub Release..."
-SUPERVISOR_IMAGE=$(curl -fsSL "$RELEASE_URL" 2>/dev/null)
+log_info "Fetching latest supervisor version from GitHub Release..."
+SUPERVISOR_VERSION=$(curl -fsSL "$RELEASE_URL" 2>/dev/null)
 
-if [ -z "$SUPERVISOR_IMAGE" ]; then
-    log_error "Failed to fetch latest supervisor image tag"
+if [ -z "$SUPERVISOR_VERSION" ]; then
+    log_error "Failed to fetch latest supervisor version"
     log_error "  Tried: $RELEASE_URL"
     log_error "  Please check your internet connection"
     exit 1
 fi
 
-log_info "Latest supervisor image: $SUPERVISOR_IMAGE"
+log_info "Latest supervisor version: $SUPERVISOR_VERSION"
+
+# Supervisorイメージを構築
+SUPERVISOR_IMAGE="ghcr.io/secdev-lab/rapidpen-supervisor:$SUPERVISOR_VERSION"
+log_info "Supervisor image: $SUPERVISOR_IMAGE"
 
 # Supervisorイメージをpull
 log_info "Pulling supervisor image (this may take a moment)..."
@@ -249,7 +253,7 @@ fi
 
 # 7. state.jsonのimage_tagを更新
 log_info "Updating supervisor state with image tag..."
-IMAGE_TAG="${SUPERVISOR_IMAGE#*:}"  # イメージ名からタグ部分を抽出
+IMAGE_TAG="$SUPERVISOR_VERSION"  # バージョン文字列をそのまま使用（例: edge-v1.0.0）
 
 # JSONファイルの更新（PLACEHOLDER → 実際のタグ）
 if [ -f "$STATE_TEMPLATE" ]; then
