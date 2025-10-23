@@ -1,0 +1,36 @@
+[SERVICE]
+    Flush        5
+    Daemon       Off
+    Log_Level    info
+
+# Supervisor logs
+[INPUT]
+    Name              tail
+    Path              /var/log/rapidpen/supervisor/*.log
+    Tag               supervisor
+    Parser            json
+    Refresh_Interval  5
+    Read_from_Head    False
+
+# Operator logs
+[INPUT]
+    Name              tail
+    Path              /var/log/rapidpen/operator/*/*.log
+    Tag               operator
+    Parser            json
+    Refresh_Interval  5
+    Read_from_Head    False
+
+# Send all logs to Grafana Cloud Loki
+[OUTPUT]
+    Name              loki
+    Match             *
+    Host              {{LOKI_ENDPOINT_HOST}}
+    Port              443
+    TLS               On
+    TLS.verify        On
+    HTTP_User         {{LOKI_USER_ID}}
+    HTTP_Passwd       {{LOKI_API_TOKEN}}
+    Labels            job=rapidpen-edge, supervisor_id={{SUPERVISOR_ID}}
+    Label_keys        $source
+    Remove_keys       source

@@ -1,0 +1,22 @@
+[nnUnit]
+Description=Fluent Bit for RapidPen Edge Observability
+Documentation=https://docs.fluentbit.io/
+After=network.target rapidpen-supervisor.service
+Requires=docker.service
+
+[Service]
+Type=simple
+ExecStartPre=-{{DOCKER_BIN}} stop rapidpen-fluent-bit
+ExecStartPre=-{{DOCKER_BIN}} rm rapidpen-fluent-bit
+ExecStart={{DOCKER_BIN}} run --rm \
+    --name rapidpen-fluent-bit \
+    -v /var/log/rapidpen:/var/log/rapidpen:ro \
+    -v /etc/rapidpen/edge-observability/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro \
+    fluent/fluent-bit:latest \
+    -c /fluent-bit/etc/fluent-bit.conf
+ExecStop={{DOCKER_BIN}} stop rapidpen-fluent-bit
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

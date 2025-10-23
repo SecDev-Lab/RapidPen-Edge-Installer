@@ -20,6 +20,57 @@ log_warn() {
     printf "${YELLOW}[WARN]${NC} %s\n" "$1"
 }
 
+# クリーンアップ関数（インストール失敗時）
+cleanup_on_error() {
+    log_error "Installation failed. Cleaning up..."
+
+    # Stop and disable supervisor service if it was started
+    if systemctl is-active --quiet rapidpen-supervisor 2>/dev/null; then
+        systemctl stop rapidpen-supervisor
+        log_info "  Stopped rapidpen-supervisor service"
+    fi
+
+    if systemctl is-enabled --quiet rapidpen-supervisor 2>/dev/null; then
+        systemctl disable rapidpen-supervisor
+        log_info "  Disabled rapidpen-supervisor service"
+    fi
+
+    # Remove systemd service file
+    if [ -f /etc/systemd/system/rapidpen-supervisor.service ]; then
+        rm /etc/systemd/system/rapidpen-supervisor.service
+        systemctl daemon-reload
+        log_info "  Removed systemd service file"
+    fi
+
+    # Remove upgrade check script
+    if [ -f /usr/local/bin/rapidpen-supervisor-check-upgrade.sh ]; then
+        rm /usr/local/bin/rapidpen-supervisor-check-upgrade.sh
+        log_info "  Removed upgrade check script"
+    fi
+
+    # Remove configuration directories
+    if [ -d /etc/rapidpen ]; then
+        rm -rf /etc/rapidpen
+        log_info "  Removed /etc/rapidpen/"
+    fi
+
+    # Remove log directories
+    if [ -d /var/log/rapidpen ]; then
+        rm -rf /var/log/rapidpen
+        log_info "  Removed /var/log/rapidpen/"
+    fi
+
+    # Optionally remove Docker image
+    if [ -n "$SUPERVISOR_IMAGE" ]; then
+        if docker image inspect "$SUPERVISOR_IMAGE" >/dev/null 2>&1; then
+            docker rmi "$SUPERVISOR_IMAGE" >/dev/null 2>&1
+            log_info "  Removed Docker image: $SUPERVISOR_IMAGE"
+        fi
+    fi
+
+    log_error "Cleanup completed. Please resolve the issue and try again."
+}
+
 echo "==========================="
 echo "  RapidPen Edge Installer  "
 echo "==========================="
@@ -325,7 +376,124 @@ log_info "  Enabled rapidpen-supervisor service (auto-start on boot)"
 systemctl start rapidpen-supervisor
 log_info "  Started rapidpen-supervisor service"
 
-# 8. アンインストーラーをシステムに配置
+# 9. Observability設定（Fluent Bit setup）
+log_info "Setting up observability (Fluent Bit for log collection)..."
+
+# 9.1 Observability設定ディレクトリ作成
+OBSERVABILITY_DIR="/etc/rapidpen/edge-observability"
+if [ ! -d "$OBSERVABILITY_DIR" ]; then
+    mkdir -p "$OBSERVABILITY_DIR"
+    chmod 700 "$OBSERVABILITY_DIR"
+    log_info "  Created $OBSERVABILITY_DIR/"
+else
+    log_info "  $OBSERVABILITY_DIR/ already exists"
+fi
+
+# 9.2 Hub APIからObservability設定取得
+log_info "Fetching observability configuration from RapidPen Hub..."
+
+# Edge API Keyはstate.jsonから取得（既存のRAPIDPEN_CLOUD_API_KEYを流用）
+EDGE_API_KEY=$(jq_exec -r '.rapidpen_cloud_api_key' "$STATE_FILE")
+
+# Base URLからObservability APIエンドポイントを構築
+# 例: https://api.rapidpen.app/api/edge/supervisor → https://api.rapidpen.app/api/edge/installer/v1/observability
+OBSERVABILITY_API_URL=$(echo "$RAPIDPEN_BASEURL" | sed 's|/api/edge/supervisor|/api/edge/installer/v1/observability|')
+
+# curlエラーをキャッチ（set -e でスクリプトが終了しないように）
+OBSERVABILITY_RESPONSE=$(curl -fsSL \
+    -H "Authorization: Bearer $EDGE_API_KEY" \
+    "$OBSERVABILITY_API_URL" 2>&1) || {
+    log_error "Failed to fetch observability configuration from Hub"
+    log_error "  API URL: $OBSERVABILITY_API_URL"
+    log_error "  Error: $(echo "$OBSERVABILITY_RESPONSE" | head -1)"
+    log_error ""
+    log_error "The Hub API endpoint '/api/edge/installer/v1/observability' is required."
+    log_error "Please ensure the Hub is running the latest version that supports this endpoint."
+    cleanup_on_error
+    exit 1
+}
+
+if [ -z "$OBSERVABILITY_RESPONSE" ]; then
+    # Already handled above, skip
+    :
+else
+    # レスポンスが有効なJSONか確認
+    if echo "$OBSERVABILITY_RESPONSE" | jq_exec -e . > /dev/null 2>&1; then
+        # 必須フィールド確認
+        LOKI_ENDPOINT=$(echo "$OBSERVABILITY_RESPONSE" | jq_exec -r '.loki_endpoint // empty')
+
+        if [ -z "$LOKI_ENDPOINT" ]; then
+            log_error "Invalid observability configuration received (missing loki_endpoint)"
+            log_error "  Response: $OBSERVABILITY_RESPONSE"
+            cleanup_on_error
+            exit 1
+        else
+            # 9.3 レスポンスJSONをそのまま保存
+            echo "$OBSERVABILITY_RESPONSE" > "$OBSERVABILITY_DIR/api-config.json"
+            chmod 600 "$OBSERVABILITY_DIR/api-config.json"
+            log_info "  Saved observability configuration to $OBSERVABILITY_DIR/api-config.json"
+
+            # 9.4 Fluent Bit設定ファイル生成
+            LOKI_HOST=$(echo "$LOKI_ENDPOINT" | sed -E 's|https?://([^/]+).*|\1|')
+            LOKI_USER_ID=$(echo "$OBSERVABILITY_RESPONSE" | jq_exec -r '.loki_user_id')
+            LOKI_API_TOKEN=$(echo "$OBSERVABILITY_RESPONSE" | jq_exec -r '.loki_api_token')
+
+            FLUENT_BIT_CONFIG_TEMPLATE="$SCRIPT_DIR/templates/fluent-bit.conf.template"
+            if [ -f "$FLUENT_BIT_CONFIG_TEMPLATE" ]; then
+                sed -e "s|{{LOKI_ENDPOINT_HOST}}|$LOKI_HOST|g" \
+                    -e "s|{{LOKI_USER_ID}}|$LOKI_USER_ID|g" \
+                    -e "s|{{LOKI_API_TOKEN}}|$LOKI_API_TOKEN|g" \
+                    -e "s|{{SUPERVISOR_ID}}|$SUPERVISOR_ID_CANDIDATE|g" \
+                    "$FLUENT_BIT_CONFIG_TEMPLATE" > "$OBSERVABILITY_DIR/fluent-bit.conf"
+                chmod 644 "$OBSERVABILITY_DIR/fluent-bit.conf"
+                log_info "  Created Fluent Bit configuration: $OBSERVABILITY_DIR/fluent-bit.conf"
+            else
+                log_error "Template not found: $FLUENT_BIT_CONFIG_TEMPLATE"
+                exit 1
+            fi
+
+            # 9.5 Fluent Bit systemd サービスインストール
+            FLUENT_BIT_SERVICE_TEMPLATE="$SCRIPT_DIR/templates/rapidpen-fluent-bit.service.template"
+            if [ -f "$FLUENT_BIT_SERVICE_TEMPLATE" ]; then
+                sed -e "s|{{DOCKER_BIN}}|$DOCKER_BIN|g" \
+                    "$FLUENT_BIT_SERVICE_TEMPLATE" > /etc/systemd/system/rapidpen-fluent-bit.service
+                log_info "  Created service file at /etc/systemd/system/rapidpen-fluent-bit.service"
+
+                # systemdをリロード
+                systemctl daemon-reload
+                log_info "  Reloaded systemd daemon"
+
+                # サービスを有効化（自動起動）
+                systemctl enable rapidpen-fluent-bit
+                log_info "  Enabled rapidpen-fluent-bit service (auto-start on boot)"
+
+                # Fluent Bitイメージをpull
+                log_info "Pulling Fluent Bit image..."
+                if docker pull fluent/fluent-bit:latest > /dev/null 2>&1; then
+                    log_info "  ✓ Fluent Bit image pulled successfully"
+                else
+                    log_warn "Failed to pull Fluent Bit image"
+                    log_warn "  Service will attempt to pull on first start"
+                fi
+
+                # サービスを起動
+                systemctl start rapidpen-fluent-bit
+                log_info "  Started rapidpen-fluent-bit service"
+                log_info "  ✓ Observability setup completed"
+            else
+                log_error "Template not found: $FLUENT_BIT_SERVICE_TEMPLATE"
+                exit 1
+            fi
+        fi
+    else
+        log_error "Received invalid JSON response from Hub API"
+        log_error "  Response: $OBSERVABILITY_RESPONSE"
+        cleanup_on_error
+        exit 1
+    fi
+fi
+
+# 10. アンインストーラーをシステムに配置
 log_info "Installing uninstall command..."
 
 UNINSTALL_SCRIPT="$SCRIPT_DIR/uninstall.sh"
@@ -342,17 +510,25 @@ else
     log_warn "Skipping uninstall command installation"
 fi
 
-# 9. 完了メッセージ
+# 11. 完了メッセージ
 echo ""
 echo "==========================================="
 log_info "Installation completed successfully!"
 echo "==========================================="
 echo ""
-echo "Service is now running!"
+echo "Services are now running!"
 echo ""
 echo "Useful commands:"
-echo "  Check status: sudo systemctl status rapidpen-supervisor"
-echo "  View logs:    sudo journalctl -u rapidpen-supervisor -f"
-echo "  Stop:         sudo systemctl stop rapidpen-supervisor"
-echo "  Restart:      sudo systemctl restart rapidpen-supervisor"
+echo "  Supervisor:"
+echo "    Check status: sudo systemctl status rapidpen-supervisor"
+echo "    View logs:    sudo journalctl -u rapidpen-supervisor -f"
+echo "    Stop:         sudo systemctl stop rapidpen-supervisor"
+echo "    Restart:      sudo systemctl restart rapidpen-supervisor"
+echo ""
+echo "  Fluent Bit (Log Collection):"
+echo "    Check status: sudo systemctl status rapidpen-fluent-bit"
+echo "    View logs:    sudo journalctl -u rapidpen-fluent-bit -f"
+echo "    Stop:         sudo systemctl stop rapidpen-fluent-bit"
+echo "    Restart:      sudo systemctl restart rapidpen-fluent-bit"
+echo ""
 echo "  Uninstall:    sudo rapidpen-uninstall"
