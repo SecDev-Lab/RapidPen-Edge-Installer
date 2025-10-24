@@ -3,10 +3,16 @@
     Daemon       Off
     Log_Level    info
 
+[PARSER]
+    Name        json
+    Format      json
+    Time_Key    @timestamp
+    Time_Format %Y-%m-%dT%H:%M:%S.%L%z
+
 # Supervisor logs
 [INPUT]
     Name              tail
-    Path              /var/log/rapidpen/supervisor/*.log
+    Path              /var/log/rapidpen/supervisor/*.jsonl
     Tag               supervisor
     Parser            json
     Refresh_Interval  5
@@ -15,7 +21,7 @@
 # Operator logs
 [INPUT]
     Name              tail
-    Path              /var/log/rapidpen/operator/*/*.log
+    Path              /var/log/rapidpen/operator/*/*.jsonl
     Tag               operator
     Parser            json
     Refresh_Interval  5
@@ -31,6 +37,5 @@
     TLS.verify        On
     HTTP_User         {{LOKI_USER_ID}}
     HTTP_Passwd       {{LOKI_API_TOKEN}}
-    Labels            job=rapidpen-edge, supervisor_id={{SUPERVISOR_ID}}
-    Label_keys        $source
-    Remove_keys       source
+    Labels            job=rapidpen
+    label_keys        $service,$level,$org_id,$run_id,$supervisor_id
