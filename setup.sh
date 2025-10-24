@@ -420,11 +420,11 @@ else
     # レスポンスが有効なJSONか確認
     if echo "$OBSERVABILITY_RESPONSE" | jq_exec -e . > /dev/null 2>&1; then
         # 必須フィールド確認
-        LOKI_ENDPOINT=$(echo "$OBSERVABILITY_RESPONSE" | jq_exec -r '.loki_endpoint // empty')
+        LOKI_ENDPOINT=$(echo "$OBSERVABILITY_RESPONSE" | jq_exec -r '.log_endpoint // empty')
 
         if [ -z "$LOKI_ENDPOINT" ]; then
-            log_error "Invalid observability configuration received (missing loki_endpoint)"
-            log_error "  Response: $OBSERVABILITY_RESPONSE"
+            log_error "Invalid observability configuration received (missing log_endpoint)"
+            log_error "  Please check the Hub API configuration."
             cleanup_on_error
             exit 1
         else
@@ -435,8 +435,8 @@ else
 
             # 9.4 Fluent Bit設定ファイル生成
             LOKI_HOST=$(echo "$LOKI_ENDPOINT" | sed -E 's|https?://([^/]+).*|\1|')
-            LOKI_USER_ID=$(echo "$OBSERVABILITY_RESPONSE" | jq_exec -r '.loki_user_id')
-            LOKI_API_TOKEN=$(echo "$OBSERVABILITY_RESPONSE" | jq_exec -r '.loki_api_token')
+            LOKI_USER_ID=$(echo "$OBSERVABILITY_RESPONSE" | jq_exec -r '.log_user_id')
+            LOKI_API_TOKEN=$(echo "$OBSERVABILITY_RESPONSE" | jq_exec -r '.log_api_token')
 
             FLUENT_BIT_CONFIG_TEMPLATE="$SCRIPT_DIR/templates/fluent-bit.conf.template"
             if [ -f "$FLUENT_BIT_CONFIG_TEMPLATE" ]; then
@@ -487,7 +487,7 @@ else
         fi
     else
         log_error "Received invalid JSON response from Hub API"
-        log_error "  Response: $OBSERVABILITY_RESPONSE"
+        log_error "  Please check the Hub API configuration."
         cleanup_on_error
         exit 1
     fi
