@@ -38,8 +38,9 @@ log_info "✓ Running as root"
 echo ""
 log_warn "This will remove RapidPen Supervisor and all related files."
 log_warn "The following will be removed:"
-echo "  - systemd service (rapidpen-supervisor)"
-echo "  - Docker container (rapidpen-supervisor)"
+echo "  - systemd services (rapidpen-supervisor, rapidpen-fluent-bit)"
+echo "  - Docker containers (rapidpen-supervisor, rapidpen-fluent-bit)"
+echo "  - Docker images (rapidpen-supervisor, fluent/fluent-bit)"
 echo "  - Configuration files (/etc/rapidpen/)"
 echo "  - Log files (/var/log/rapidpen/)"
 echo ""
@@ -54,46 +55,82 @@ fi
 echo ""
 log_info "Starting uninstallation..."
 
-# 3. Stop, disable, and remove systemd service
+# 3. Stop, disable, and remove systemd services
+log_info "Stopping and disabling systemd services..."
+
+# Supervisor service
 if [ -f "/etc/systemd/system/rapidpen-supervisor.service" ]; then
-    log_info "Stopping and disabling systemd service..."
-
-    # Stop service
     systemctl stop rapidpen-supervisor 2>/dev/null || true
-    log_info "  Service stopped"
+    log_info "  Stopped rapidpen-supervisor service"
 
-    # Disable service
     systemctl disable rapidpen-supervisor 2>/dev/null || true
-    log_info "  Service disabled"
+    log_info "  Disabled rapidpen-supervisor service"
 
-    # Remove service file
     rm -f /etc/systemd/system/rapidpen-supervisor.service
-    log_info "  Service file removed"
-
-    # Reload systemd
-    systemctl daemon-reload
-    log_info "  Systemd daemon reloaded"
+    log_info "  Removed rapidpen-supervisor service file"
 else
-    log_warn "systemd service not found (skipping)"
+    log_warn "  rapidpen-supervisor service not found (skipping)"
 fi
 
-# 4. Stop and remove Docker container
+# Fluent Bit service
+if [ -f "/etc/systemd/system/rapidpen-fluent-bit.service" ]; then
+    systemctl stop rapidpen-fluent-bit 2>/dev/null || true
+    log_info "  Stopped rapidpen-fluent-bit service"
+
+    systemctl disable rapidpen-fluent-bit 2>/dev/null || true
+    log_info "  Disabled rapidpen-fluent-bit service"
+
+    rm -f /etc/systemd/system/rapidpen-fluent-bit.service
+    log_info "  Removed rapidpen-fluent-bit service file"
+else
+    log_warn "  rapidpen-fluent-bit service not found (skipping)"
+fi
+
+# Reload systemd
+systemctl daemon-reload
+log_info "  Systemd daemon reloaded"
+
+# 4. Stop and remove Docker containers and images
 log_info "Cleaning up Docker resources..."
 
 if command -v docker > /dev/null 2>&1; then
-    # Stop and remove container
+    # Stop and remove supervisor container
     if docker ps -a 2>/dev/null | grep -q rapidpen-supervisor; then
         docker rm -f rapidpen-supervisor > /dev/null 2>&1
-        log_info "  Container removed"
+        log_info "  Removed rapidpen-supervisor container"
     else
-        log_warn "  Container not found (skipping)"
+        log_warn "  rapidpen-supervisor container not found (skipping)"
+    fi
+
+    # Stop and remove fluent-bit container
+    if docker ps -a 2>/dev/null | grep -q rapidpen-fluent-bit; then
+        docker rm -f rapidpen-fluent-bit > /dev/null 2>&1
+        log_info "  Removed rapidpen-fluent-bit container"
+    else
+        log_warn "  rapidpen-fluent-bit container not found (skipping)"
+    fi
+
+    # Remove supervisor image
+    if docker image inspect ghcr.io/secdev-lab/rapidpen-supervisor >/dev/null 2>&1; then
+        # Find all tags and remove them
+        docker images --format "{{.Repository}}:{{.Tag}}" | grep "ghcr.io/secdev-lab/rapidpen-supervisor" | while read -r image; do
+            docker rmi "$image" > /dev/null 2>&1
+            log_info "  Removed Docker image: $image"
+        done
+    else
+        log_warn "  rapidpen-supervisor image not found (skipping)"
+    fi
+
+    # Remove fluent-bit image
+    if docker image inspect fluent/fluent-bit:latest >/dev/null 2>&1; then
+        docker rmi fluent/fluent-bit:latest > /dev/null 2>&1
+        log_info "  Removed Docker image: fluent/fluent-bit:latest"
+    else
+        log_warn "  fluent/fluent-bit:latest image not found (skipping)"
     fi
 else
-    log_warn "  Docker not found (skipping container cleanup)"
+    log_warn "  Docker not found (skipping Docker cleanup)"
 fi
-
-# Note: Docker images are preserved (may be used elsewhere)
-log_info "  Note: Docker images are preserved"
 
 # 5. Remove files and directories
 log_info "Removing files and directories..."

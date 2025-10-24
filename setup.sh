@@ -35,12 +35,31 @@ cleanup_on_error() {
         log_info "  Disabled rapidpen-supervisor service"
     fi
 
-    # Remove systemd service file
+    # Remove supervisor systemd service file
     if [ -f /etc/systemd/system/rapidpen-supervisor.service ]; then
         rm /etc/systemd/system/rapidpen-supervisor.service
-        systemctl daemon-reload
-        log_info "  Removed systemd service file"
+        log_info "  Removed rapidpen-supervisor service file"
     fi
+
+    # Stop and disable fluent-bit service if it was started
+    if systemctl is-active --quiet rapidpen-fluent-bit 2>/dev/null; then
+        systemctl stop rapidpen-fluent-bit
+        log_info "  Stopped rapidpen-fluent-bit service"
+    fi
+
+    if systemctl is-enabled --quiet rapidpen-fluent-bit 2>/dev/null; then
+        systemctl disable rapidpen-fluent-bit
+        log_info "  Disabled rapidpen-fluent-bit service"
+    fi
+
+    # Remove fluent-bit systemd service file
+    if [ -f /etc/systemd/system/rapidpen-fluent-bit.service ]; then
+        rm /etc/systemd/system/rapidpen-fluent-bit.service
+        log_info "  Removed rapidpen-fluent-bit service file"
+    fi
+
+    # Reload systemd
+    systemctl daemon-reload
 
     # Remove upgrade check script
     if [ -f /usr/local/bin/rapidpen-supervisor-check-upgrade.sh ]; then
@@ -60,12 +79,18 @@ cleanup_on_error() {
         log_info "  Removed /var/log/rapidpen/"
     fi
 
-    # Optionally remove Docker image
+    # Remove supervisor Docker image
     if [ -n "$SUPERVISOR_IMAGE" ]; then
         if docker image inspect "$SUPERVISOR_IMAGE" >/dev/null 2>&1; then
             docker rmi "$SUPERVISOR_IMAGE" >/dev/null 2>&1
             log_info "  Removed Docker image: $SUPERVISOR_IMAGE"
         fi
+    fi
+
+    # Remove fluent-bit Docker image
+    if docker image inspect fluent/fluent-bit:latest >/dev/null 2>&1; then
+        docker rmi fluent/fluent-bit:latest >/dev/null 2>&1
+        log_info "  Removed Docker image: fluent/fluent-bit:latest"
     fi
 
     log_error "Cleanup completed. Please resolve the issue and try again."
