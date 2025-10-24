@@ -2,35 +2,34 @@
     Flush        5
     Daemon       Off
     Log_Level    info
-
-[PARSER]
-    Name        json
-    Format      json
-    Time_Key    @timestamp
-    Time_Format %Y-%m-%dT%H:%M:%S.%L%z
+    Parsers_File /fluent-bit/etc/parsers.conf
 
 # Supervisor logs
 [INPUT]
     Name              tail
     Path              /var/log/rapidpen/supervisor/*.jsonl
-    Tag               supervisor
     Parser            json
+    Tag               rapidpen.supervisor
     Refresh_Interval  5
+    Mem_Buf_Limit     5MB
+    Skip_Long_Lines   On
     Read_from_Head    False
 
 # Operator logs
 [INPUT]
     Name              tail
     Path              /var/log/rapidpen/operator/*/*.jsonl
-    Tag               operator
     Parser            json
+    Tag               rapidpen.operator
     Refresh_Interval  5
+    Mem_Buf_Limit     5MB
+    Skip_Long_Lines   On
     Read_from_Head    False
 
 # Send all logs to Grafana Cloud Loki
 [OUTPUT]
     Name              loki
-    Match             *
+    Match             rapidpen.*
     Host              {{LOKI_ENDPOINT_HOST}}
     Port              443
     TLS               On
@@ -39,3 +38,4 @@
     HTTP_Passwd       {{LOKI_API_TOKEN}}
     Labels            job=rapidpen
     label_keys        $service,$level,$org_id,$run_id,$supervisor_id
+    remove_keys       Off

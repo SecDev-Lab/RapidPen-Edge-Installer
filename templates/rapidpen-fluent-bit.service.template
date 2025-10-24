@@ -1,4 +1,4 @@
-[nnUnit]
+[Unit]
 Description=Fluent Bit for RapidPen Edge Observability
 Documentation=https://docs.fluentbit.io/
 After=network.target rapidpen-supervisor.service
