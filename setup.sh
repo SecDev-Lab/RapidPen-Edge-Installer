@@ -401,7 +401,7 @@ OBSERVABILITY_API_URL=$(echo "$RAPIDPEN_BASEURL" | sed 's|/api/edge/supervisor|/
 
 # curlエラーをキャッチ（set -e でスクリプトが終了しないように）
 OBSERVABILITY_RESPONSE=$(curl -fsSL \
-    -H "Authorization: Bearer $EDGE_API_KEY" \
+    -H "X-API-Key: $EDGE_API_KEY" \
     "$OBSERVABILITY_API_URL" 2>&1) || {
     log_error "Failed to fetch observability configuration from Hub"
     log_error "  API URL: $OBSERVABILITY_API_URL"
