@@ -169,6 +169,7 @@ fi
 # /var/log/rapidpen/operator - Operatorログ用
 if [ ! -d "/var/log/rapidpen/operator" ]; then
     mkdir -p /var/log/rapidpen/operator
+    chmod 777 /var/log/rapidpen/operator
     log_info "  Created /var/log/rapidpen/operator/"
 else
     log_info "  /var/log/rapidpen/operator/ already exists"
