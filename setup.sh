@@ -114,7 +114,7 @@ log_info "✓ Running as root"
 log_info "Checking Docker installation..."
 
 # Dockerバイナリパス検出
-DOCKER_BIN=$(command -v docker)
+DOCKER_BIN=$(command -v docker 2>/dev/null) || DOCKER_BIN=""
 if [ -z "$DOCKER_BIN" ]; then
     log_error "Docker is not installed"
     echo ""
@@ -125,7 +125,14 @@ if [ -z "$DOCKER_BIN" ]; then
 fi
 
 # Dockerバージョン確認（情報のみ）
-DOCKER_VERSION=$("$DOCKER_BIN" --version | cut -d' ' -f3 | cut -d',' -f1)
+DOCKER_VERSION=$("$DOCKER_BIN" --version 2>/dev/null | cut -d' ' -f3 | cut -d',' -f1) || DOCKER_VERSION=""
+if [ -z "$DOCKER_VERSION" ]; then
+    log_error "Dockerはインストールされていますが応答がありません"
+    echo ""
+    echo "Dockerデーモンが起動しているか確認してください:"
+    echo "  sudo systemctl status docker"
+    exit 1
+fi
 log_info "✓ Docker found (version: $DOCKER_VERSION)"
 log_info "  Docker binary: $DOCKER_BIN"
 
@@ -154,6 +161,20 @@ if [ -z "$DOCKER_SOCK" ]; then
 fi
 
 log_info "✓ Docker socket found: $DOCKER_SOCK"
+
+# Dockerデーモンの起動確認
+log_info "Verifying Docker daemon is running..."
+if ! "$DOCKER_BIN" info > /dev/null 2>&1; then
+    log_error "Dockerデーモンが起動していません"
+    echo ""
+    echo "Dockerを起動してください:"
+    echo "  sudo systemctl start docker"
+    echo ""
+    echo "起動時の自動起動を有効にするには:"
+    echo "  sudo systemctl enable docker"
+    exit 1
+fi
+log_info "✓ Docker daemon is running"
 
 # 3. 必要なディレクトリ作成
 log_info "Creating required directories..."
@@ -287,7 +308,10 @@ jq_exec() {
         jq "$@"
     else
         # Dockerコンテナでjqを実行
-        docker run --rm -i imega/jq "$@"
+        if ! docker run --rm -i imega/jq "$@" 2>/dev/null; then
+            log_error "jqの実行に失敗しました（ローカルjqもDocker経由のjqも利用不可）"
+            return 1
+        fi
     fi
 }
 
@@ -363,6 +387,15 @@ fi
 
 # 8. systemdサービスファイルをインストール
 log_info "Installing systemd service..."
+
+# systemctlの存在確認
+if ! command -v systemctl > /dev/null 2>&1; then
+    log_error "systemctlが利用できません"
+    echo ""
+    echo "このインストーラーはsystemdが必要です。"
+    echo "systemd以外のシステムでは手動インストールが必要です。"
+    exit 1
+fi
 
 # サービステンプレートファイルの場所を探す
 SCRIPT_DIR=$(dirname "$0")
