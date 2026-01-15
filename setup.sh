@@ -127,9 +127,9 @@ fi
 # Dockerバージョン確認（情報のみ）
 DOCKER_VERSION=$("$DOCKER_BIN" --version 2>/dev/null | cut -d' ' -f3 | cut -d',' -f1) || DOCKER_VERSION=""
 if [ -z "$DOCKER_VERSION" ]; then
-    log_error "Dockerはインストールされていますが応答がありません"
+    log_error "Docker is installed but not responding"
     echo ""
-    echo "Dockerデーモンが起動しているか確認してください:"
+    echo "Please check if Docker daemon is running:"
     echo "  sudo systemctl status docker"
     exit 1
 fi
@@ -165,12 +165,12 @@ log_info "✓ Docker socket found: $DOCKER_SOCK"
 # Dockerデーモンの起動確認
 log_info "Verifying Docker daemon is running..."
 if ! "$DOCKER_BIN" info > /dev/null 2>&1; then
-    log_error "Dockerデーモンが起動していません"
+    log_error "Docker daemon is not running"
     echo ""
-    echo "Dockerを起動してください:"
+    echo "Please start Docker:"
     echo "  sudo systemctl start docker"
     echo ""
-    echo "起動時の自動起動を有効にするには:"
+    echo "To enable Docker on boot:"
     echo "  sudo systemctl enable docker"
     exit 1
 fi
@@ -309,7 +309,7 @@ jq_exec() {
     else
         # Dockerコンテナでjqを実行
         if ! docker run --rm -i imega/jq "$@" 2>/dev/null; then
-            log_error "jqの実行に失敗しました（ローカルjqもDocker経由のjqも利用不可）"
+            log_error "Failed to execute jq (neither local jq nor Docker jq available)"
             return 1
         fi
     fi
@@ -390,10 +390,10 @@ log_info "Installing systemd service..."
 
 # systemctlの存在確認
 if ! command -v systemctl > /dev/null 2>&1; then
-    log_error "systemctlが利用できません"
+    log_error "systemctl is not available"
     echo ""
-    echo "このインストーラーはsystemdが必要です。"
-    echo "systemd以外のシステムでは手動インストールが必要です。"
+    echo "This installer requires systemd."
+    echo "For non-systemd systems, manual installation is required."
     exit 1
 fi
 
