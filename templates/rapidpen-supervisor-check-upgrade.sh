@@ -78,8 +78,15 @@ FULL_IMAGE_NAME="ghcr.io/secdev-lab/rapidpen-supervisor:$TARGET_IMAGE_TAG"
 log_info "Pulling new image: $FULL_IMAGE_NAME"
 if ! docker pull "$FULL_IMAGE_NAME"; then
     log_error "Failed to pull image: $FULL_IMAGE_NAME"
-    log_error "Upgrade aborted. Will retry on next restart."
-    exit 1
+    log_info "Falling back to current version: $IMAGE_TAG"
+
+    # target_image_tag をクリアして現行バージョンで起動
+    TMP_FILE=$(mktemp)
+    cat "$STATE_FILE" | jq_exec '.target_image_tag = null' > "$TMP_FILE"
+    mv "$TMP_FILE" "$STATE_FILE"
+    chmod 600 "$STATE_FILE"
+
+    exit 0  # 成功として終了し、現行バージョンで起動
 fi
 
 log_info "Image pulled successfully"
