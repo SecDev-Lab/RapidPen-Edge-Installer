@@ -43,3 +43,6 @@
     Labels            job=rapidpen
     label_keys        $service,$level,$org_id,$run_id,$supervisor_id
     remove_keys       Off
+    net.dns.mode        UDP
+    net.dns.resolver    LEGACY
+    net.dns.prefer_ipv4 true
