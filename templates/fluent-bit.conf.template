@@ -14,6 +14,8 @@
     Mem_Buf_Limit     5MB
     Skip_Long_Lines   On
     Read_from_Head    False
+    DB                /fluent-bit/data/supervisor.db
+    Rotate_Wait       5
 
 # Operator logs
 [INPUT]
@@ -25,6 +27,8 @@
     Mem_Buf_Limit     5MB
     Skip_Long_Lines   On
     Read_from_Head    False
+    DB                /fluent-bit/data/operator.db
+    Rotate_Wait       5
 
 # Send all logs to Grafana Cloud Loki
 [OUTPUT]
@@ -39,3 +43,6 @@
     Labels            job=rapidpen
     label_keys        $service,$level,$org_id,$run_id,$supervisor_id
     remove_keys       Off
+    net.dns.mode        UDP
+    net.dns.resolver    LEGACY
+    net.dns.prefer_ipv4 true

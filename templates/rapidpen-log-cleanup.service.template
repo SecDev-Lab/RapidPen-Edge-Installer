@@ -1,0 +1,6 @@
+[Unit]
+Description=RapidPen Edge Log Cleanup
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/rapidpen-log-cleanup.sh

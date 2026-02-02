@@ -552,7 +552,41 @@ else
     fi
 fi
 
-# 10. アンインストーラーをシステムに配置
+# 10. ログクリーンアップ（日次ローテーション + 7日保持）
+log_info "Installing log cleanup timer..."
+
+LOG_CLEANUP_SCRIPT_TEMPLATE="$SCRIPT_DIR/templates/rapidpen-log-cleanup.sh"
+LOG_CLEANUP_SERVICE_TEMPLATE="$SCRIPT_DIR/templates/rapidpen-log-cleanup.service.template"
+LOG_CLEANUP_TIMER_TEMPLATE="$SCRIPT_DIR/templates/rapidpen-log-cleanup.timer.template"
+LOG_CLEANUP_SCRIPT_TARGET="/usr/local/bin/rapidpen-log-cleanup.sh"
+
+if [ -f "$LOG_CLEANUP_SCRIPT_TEMPLATE" ] && [ -f "$LOG_CLEANUP_SERVICE_TEMPLATE" ] && [ -f "$LOG_CLEANUP_TIMER_TEMPLATE" ]; then
+    # Install cleanup script
+    cp "$LOG_CLEANUP_SCRIPT_TEMPLATE" "$LOG_CLEANUP_SCRIPT_TARGET"
+    chmod 755 "$LOG_CLEANUP_SCRIPT_TARGET"
+    log_info "  Installed cleanup script: $LOG_CLEANUP_SCRIPT_TARGET"
+
+    # Install systemd service (no template variables to substitute)
+    cp "$LOG_CLEANUP_SERVICE_TEMPLATE" /etc/systemd/system/rapidpen-log-cleanup.service
+    log_info "  Created service file at /etc/systemd/system/rapidpen-log-cleanup.service"
+
+    # Install systemd timer (no template variables to substitute)
+    cp "$LOG_CLEANUP_TIMER_TEMPLATE" /etc/systemd/system/rapidpen-log-cleanup.timer
+    log_info "  Created timer file at /etc/systemd/system/rapidpen-log-cleanup.timer"
+
+    # Reload systemd and enable timer
+    systemctl daemon-reload
+    systemctl enable --now rapidpen-log-cleanup.timer
+    log_info "  Enabled and started rapidpen-log-cleanup.timer (daily)"
+    log_info "  ✓ Log cleanup setup completed"
+else
+    log_warn "Log cleanup templates not found (skipping)"
+    log_warn "  Expected: $LOG_CLEANUP_SCRIPT_TEMPLATE"
+    log_warn "  Expected: $LOG_CLEANUP_SERVICE_TEMPLATE"
+    log_warn "  Expected: $LOG_CLEANUP_TIMER_TEMPLATE"
+fi
+
+# 11. アンインストーラーをシステムに配置
 log_info "Installing uninstall command..."
 
 UNINSTALL_SCRIPT="$SCRIPT_DIR/uninstall.sh"
@@ -569,7 +603,7 @@ else
     log_warn "Skipping uninstall command installation"
 fi
 
-# 11. 完了メッセージ
+# 12. 完了メッセージ
 echo ""
 echo "==========================================="
 log_info "Installation completed successfully!"
@@ -589,5 +623,10 @@ echo "    Check status: sudo systemctl status rapidpen-fluent-bit"
 echo "    View logs:    sudo journalctl -u rapidpen-fluent-bit -f"
 echo "    Stop:         sudo systemctl stop rapidpen-fluent-bit"
 echo "    Restart:      sudo systemctl restart rapidpen-fluent-bit"
+echo ""
+echo "  Log Cleanup (daily timer):"
+echo "    Check timer:  sudo systemctl list-timers rapidpen-log-cleanup.timer"
+echo "    Run manually: sudo systemctl start rapidpen-log-cleanup.service"
+echo "    View logs:    sudo journalctl -u rapidpen-log-cleanup.service"
 echo ""
 echo "  Uninstall:    sudo rapidpen-uninstall"

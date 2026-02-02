@@ -38,11 +38,13 @@ log_info "✓ Running as root"
 echo ""
 log_warn "This will remove RapidPen Supervisor and all related files."
 log_warn "The following will be removed:"
-echo "  - systemd services (rapidpen-supervisor, rapidpen-fluent-bit)"
+echo "  - systemd services (rapidpen-supervisor, rapidpen-fluent-bit, rapidpen-log-cleanup)"
 echo "  - Docker containers (rapidpen-supervisor, rapidpen-fluent-bit)"
 echo "  - Docker images (rapidpen-supervisor, fluent/fluent-bit)"
+echo "  - Docker volumes (rapidpen-fluent-bit-data)"
 echo "  - Configuration files (/etc/rapidpen/)"
 echo "  - Log files (/var/log/rapidpen/)"
+echo "  - Utility scripts (/usr/local/bin/rapidpen-*)"
 echo ""
 printf "Are you sure you want to continue? [y/N]: "
 read -r CONFIRM
@@ -84,6 +86,19 @@ if [ -f "/etc/systemd/system/rapidpen-fluent-bit.service" ]; then
     log_info "  Removed rapidpen-fluent-bit service file"
 else
     log_warn "  rapidpen-fluent-bit service not found (skipping)"
+fi
+
+# Log cleanup timer/service
+if [ -f "/etc/systemd/system/rapidpen-log-cleanup.timer" ]; then
+    systemctl stop rapidpen-log-cleanup.timer 2>/dev/null || true
+    systemctl disable rapidpen-log-cleanup.timer 2>/dev/null || true
+    log_info "  Stopped and disabled rapidpen-log-cleanup timer"
+
+    rm -f /etc/systemd/system/rapidpen-log-cleanup.timer
+    rm -f /etc/systemd/system/rapidpen-log-cleanup.service
+    log_info "  Removed rapidpen-log-cleanup timer and service files"
+else
+    log_warn "  rapidpen-log-cleanup timer not found (skipping)"
 fi
 
 # Reload systemd
@@ -128,6 +143,14 @@ if command -v docker > /dev/null 2>&1; then
     else
         log_warn "  fluent/fluent-bit:latest image not found (skipping)"
     fi
+
+    # Remove fluent-bit data volume (DB persistence)
+    if docker volume inspect rapidpen-fluent-bit-data >/dev/null 2>&1; then
+        docker volume rm rapidpen-fluent-bit-data > /dev/null 2>&1
+        log_info "  Removed Docker volume: rapidpen-fluent-bit-data"
+    else
+        log_warn "  rapidpen-fluent-bit-data volume not found (skipping)"
+    fi
 else
     log_warn "  Docker not found (skipping Docker cleanup)"
 fi
@@ -157,6 +180,14 @@ if [ -f "/usr/local/bin/rapidpen-supervisor-check-upgrade.sh" ]; then
     log_info "  Removed /usr/local/bin/rapidpen-supervisor-check-upgrade.sh"
 else
     log_warn "  /usr/local/bin/rapidpen-supervisor-check-upgrade.sh not found"
+fi
+
+# Log cleanup script
+if [ -f "/usr/local/bin/rapidpen-log-cleanup.sh" ]; then
+    rm -f /usr/local/bin/rapidpen-log-cleanup.sh
+    log_info "  Removed /usr/local/bin/rapidpen-log-cleanup.sh"
+else
+    log_warn "  /usr/local/bin/rapidpen-log-cleanup.sh not found"
 fi
 
 # Uninstall command itself
