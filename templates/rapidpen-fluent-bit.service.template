@@ -12,6 +12,7 @@ ExecStart={{DOCKER_BIN}} run --rm \
     --name rapidpen-fluent-bit \
     -v /var/log/rapidpen:/var/log/rapidpen:ro \
     -v /etc/rapidpen/edge-observability/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro \
+    -v rapidpen-fluent-bit-data:/fluent-bit/data \
     fluent/fluent-bit:latest \
     -c /fluent-bit/etc/fluent-bit.conf
 ExecStop={{DOCKER_BIN}} stop rapidpen-fluent-bit
