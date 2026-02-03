@@ -307,11 +307,18 @@ jq_exec() {
         # ローカルのjqを使用
         jq "$@"
     else
-        # Dockerコンテナでjqを実行
-        if ! docker run --rm -i imega/jq "$@" 2>/dev/null; then
-            log_error "Failed to execute jq (neither local jq nor Docker jq available)"
+        # Dockerコンテナでjqを実行（stdinからパイプで入力すること）
+        # NOTE: Docker版jqはホストのファイルパスを読めないため、
+        #       必ず cat file | jq_exec ... のようにパイプで渡すこと
+        _jq_output=$(docker run --rm -i imega/jq "$@" 2>&1) || {
+            log_error "Failed to execute jq via Docker"
+            log_error "  Docker jq error: $_jq_output"
+            log_error "  Hint: Install jq locally for better compatibility:"
+            log_error "    Ubuntu/Debian: sudo apt-get install jq"
+            log_error "    RHEL/CentOS:   sudo yum install jq"
             return 1
-        fi
+        }
+        printf '%s\n' "$_jq_output"
     fi
 }
 
@@ -327,12 +334,20 @@ fi
 RELEASE_URL="https://github.com/SecDev-Lab/RapidPen-Edge-Installer/releases/download/supervisor-latest/supervisor-version.txt"
 
 log_info "Fetching latest supervisor version from GitHub Release..."
-SUPERVISOR_VERSION=$(curl -fsSL "$RELEASE_URL" 2>/dev/null)
+SUPERVISOR_VERSION=$(curl --max-time 30 -fsSL "$RELEASE_URL" 2>&1) || {
+    log_error "Failed to fetch latest supervisor version"
+    log_error "  URL: $RELEASE_URL"
+    log_error "  Error: $(echo "$SUPERVISOR_VERSION" | head -1)"
+    log_error "  Please check your internet connection"
+    cleanup_on_error
+    exit 1
+}
 
 if [ -z "$SUPERVISOR_VERSION" ]; then
-    log_error "Failed to fetch latest supervisor version"
+    log_error "Failed to fetch latest supervisor version (empty response)"
     log_error "  Tried: $RELEASE_URL"
     log_error "  Please check your internet connection"
+    cleanup_on_error
     exit 1
 fi
 
@@ -344,13 +359,18 @@ log_info "Supervisor image: $SUPERVISOR_IMAGE"
 
 # Supervisorイメージをpull
 log_info "Pulling supervisor image (this may take a moment)..."
-if docker pull "$SUPERVISOR_IMAGE" > /dev/null 2>&1; then
-    log_info "✓ Image pulled successfully"
-else
+PULL_OUTPUT=$(docker pull "$SUPERVISOR_IMAGE" 2>&1) || {
     log_error "Failed to pull supervisor image: $SUPERVISOR_IMAGE"
-    log_error "Please check your internet connection and Docker configuration"
+    log_error "  Docker error: $(echo "$PULL_OUTPUT" | tail -3)"
+    log_error ""
+    log_error "Please check:"
+    log_error "  - Internet connection"
+    log_error "  - Docker daemon is running: sudo systemctl status docker"
+    log_error "  - The image tag '$SUPERVISOR_VERSION' exists"
+    cleanup_on_error
     exit 1
-fi
+}
+log_info "✓ Image pulled successfully"
 
 # 7. state.jsonのimage_tagを更新
 log_info "Updating supervisor state with image tag..."
@@ -365,6 +385,7 @@ if [ -f "$STATE_TEMPLATE" ]; then
     log_info "  Updated image tag: $IMAGE_TAG"
 else
     log_error "Template not found: $STATE_TEMPLATE"
+    cleanup_on_error
     exit 1
 fi
 
@@ -382,6 +403,7 @@ if [ -f "$UPGRADE_SCRIPT_TEMPLATE" ]; then
     log_info "  Installed upgrade check script: $UPGRADE_SCRIPT_TARGET"
 else
     log_error "Upgrade check script template not found: $UPGRADE_SCRIPT_TEMPLATE"
+    cleanup_on_error
     exit 1
 fi
 
@@ -403,6 +425,7 @@ SERVICE_TEMPLATE="$SCRIPT_DIR/templates/rapidpen-supervisor.service.template"
 
 if [ ! -f "$SERVICE_TEMPLATE" ]; then
     log_error "Service template not found at $SERVICE_TEMPLATE"
+    cleanup_on_error
     exit 1
 fi
 
@@ -452,14 +475,27 @@ fi
 log_info "Fetching observability configuration from RapidPen Hub..."
 
 # Edge API Keyはstate.jsonから取得（既存のRAPIDPEN_CLOUD_API_KEYを流用）
-EDGE_API_KEY=$(jq_exec -r '.rapidpen_cloud_api_key' "$STATE_FILE")
+# NOTE: パイプ経由で渡す（Docker版jqはホストのファイルパスを読めないため）
+EDGE_API_KEY=$(cat "$STATE_FILE" | jq_exec -r '.rapidpen_cloud_api_key') || {
+    log_error "Failed to read API key from state file: $STATE_FILE"
+    log_error "  Please check if the file exists and contains valid JSON"
+    cleanup_on_error
+    exit 1
+}
+
+if [ -z "$EDGE_API_KEY" ] || [ "$EDGE_API_KEY" = "null" ]; then
+    log_error "API key is empty or null in state file: $STATE_FILE"
+    log_error "  Please re-run the installer and provide a valid API key"
+    cleanup_on_error
+    exit 1
+fi
 
 # Base URLからObservability APIエンドポイントを構築
 # 例: https://api.rapidpen.app/api/edge/supervisor → https://api.rapidpen.app/api/edge/installer/v1/observability
 OBSERVABILITY_API_URL=$(echo "$RAPIDPEN_BASEURL" | sed 's|/api/edge/supervisor|/api/edge/installer/v1/observability|')
 
 # curlエラーをキャッチ（set -e でスクリプトが終了しないように）
-OBSERVABILITY_RESPONSE=$(curl -fsSL \
+OBSERVABILITY_RESPONSE=$(curl --max-time 30 -fsSL \
     -H "X-API-Key: $EDGE_API_KEY" \
     "$OBSERVABILITY_API_URL" 2>&1) || {
     log_error "Failed to fetch observability configuration from Hub"
@@ -473,13 +509,20 @@ OBSERVABILITY_RESPONSE=$(curl -fsSL \
 }
 
 if [ -z "$OBSERVABILITY_RESPONSE" ]; then
-    # Already handled above, skip
-    :
+    log_error "Empty response from Hub observability API"
+    log_error "  API URL: $OBSERVABILITY_API_URL"
+    log_error "  Please check the Hub API is running and accessible."
+    cleanup_on_error
+    exit 1
 else
     # レスポンスが有効なJSONか確認
     if echo "$OBSERVABILITY_RESPONSE" | jq_exec -e . > /dev/null 2>&1; then
         # 必須フィールド確認
-        LOKI_ENDPOINT=$(echo "$OBSERVABILITY_RESPONSE" | jq_exec -r '.log_endpoint // empty')
+        LOKI_ENDPOINT=$(echo "$OBSERVABILITY_RESPONSE" | jq_exec -r '.log_endpoint // empty') || {
+            log_error "Failed to parse log_endpoint from observability response"
+            cleanup_on_error
+            exit 1
+        }
 
         if [ -z "$LOKI_ENDPOINT" ]; then
             log_error "Invalid observability configuration received (missing log_endpoint)"
@@ -494,8 +537,26 @@ else
 
             # 9.4 Fluent Bit設定ファイル生成
             LOKI_HOST=$(echo "$LOKI_ENDPOINT" | sed -E 's|https?://([^/]+).*|\1|')
-            LOKI_USER_ID=$(echo "$OBSERVABILITY_RESPONSE" | jq_exec -r '.log_user_id')
-            LOKI_API_TOKEN=$(echo "$OBSERVABILITY_RESPONSE" | jq_exec -r '.log_api_token')
+            LOKI_USER_ID=$(echo "$OBSERVABILITY_RESPONSE" | jq_exec -r '.log_user_id') || {
+                log_error "Failed to parse log_user_id from observability response"
+                cleanup_on_error
+                exit 1
+            }
+            LOKI_API_TOKEN=$(echo "$OBSERVABILITY_RESPONSE" | jq_exec -r '.log_api_token') || {
+                log_error "Failed to parse log_api_token from observability response"
+                cleanup_on_error
+                exit 1
+            }
+
+            if [ -z "$LOKI_HOST" ] || [ -z "$LOKI_USER_ID" ] || [ "$LOKI_USER_ID" = "null" ] || [ -z "$LOKI_API_TOKEN" ] || [ "$LOKI_API_TOKEN" = "null" ]; then
+                log_error "Incomplete observability configuration received from Hub"
+                log_error "  log_endpoint host: ${LOKI_HOST:-<empty>}"
+                log_error "  log_user_id: ${LOKI_USER_ID:-<empty>}"
+                log_error "  log_api_token: $(if [ -n "$LOKI_API_TOKEN" ] && [ "$LOKI_API_TOKEN" != "null" ]; then echo '<set>'; else echo '<empty>'; fi)"
+                log_error "  Please check the Hub observability configuration."
+                cleanup_on_error
+                exit 1
+            fi
 
             FLUENT_BIT_CONFIG_TEMPLATE="$SCRIPT_DIR/templates/fluent-bit.conf.template"
             if [ -f "$FLUENT_BIT_CONFIG_TEMPLATE" ]; then
@@ -508,6 +569,7 @@ else
                 log_info "  Created Fluent Bit configuration: $OBSERVABILITY_DIR/fluent-bit.conf"
             else
                 log_error "Template not found: $FLUENT_BIT_CONFIG_TEMPLATE"
+                cleanup_on_error
                 exit 1
             fi
 
@@ -528,11 +590,13 @@ else
 
                 # Fluent Bitイメージをpull
                 log_info "Pulling Fluent Bit image..."
-                if docker pull fluent/fluent-bit:latest > /dev/null 2>&1; then
-                    log_info "  ✓ Fluent Bit image pulled successfully"
-                else
+                FB_PULL_OUTPUT=$(docker pull fluent/fluent-bit:latest 2>&1) || {
                     log_warn "Failed to pull Fluent Bit image"
+                    log_warn "  Docker error: $(echo "$FB_PULL_OUTPUT" | tail -2)"
                     log_warn "  Service will attempt to pull on first start"
+                }
+                if docker image inspect fluent/fluent-bit:latest > /dev/null 2>&1; then
+                    log_info "  ✓ Fluent Bit image ready"
                 fi
 
                 # サービスを起動
@@ -541,6 +605,7 @@ else
                 log_info "  ✓ Observability setup completed"
             else
                 log_error "Template not found: $FLUENT_BIT_SERVICE_TEMPLATE"
+                cleanup_on_error
                 exit 1
             fi
         fi
